@@ -65,8 +65,19 @@ jobs:
             echo "== $suite =="
             ${{ matrix.bin }}/gb_acceptance \
               --roms tests/roms --golden tests/golden \
-              --filter "$suite" --timeout-frames 4000
+              --filter "$suite" --timeout-frames 4000 \
+              --dump-png "frames-${{ matrix.name }}"
           done
+
+      # A framebuffer mismatch is only diagnosable by looking at what the
+      # runner actually drew, so keep the frames when a suite fails.
+      - name: Upload rendered frames
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frames-${{ matrix.name }}
+          path: frames-${{ matrix.name }}
+          if-no-files-found: ignore
 
   sanitizers:
     name: asan+ubsan
