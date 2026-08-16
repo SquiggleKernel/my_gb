@@ -1,0 +1,56 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deployments race; the newest push wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: emscripten/emsdk:3.1.64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build
+        run: |
+          emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release \
+            -DGB_BUILD_WASM=ON \
+            -DGB_BUILD_SDL3=OFF \
+            -DGB_BUILD_HEADLESS=OFF \
+            -DGB_BUILD_TESTS=OFF
+          cmake --build build-wasm
+
+      - name: Collect site
+        run: |
+          mkdir -p site
+          cp build-wasm/src/frontend/wasm/index.html site/
+          cp build-wasm/src/frontend/wasm/index.js site/
+          cp build-wasm/src/frontend/wasm/index.wasm site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
