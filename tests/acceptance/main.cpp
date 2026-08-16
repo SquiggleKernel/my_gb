@@ -190,6 +190,30 @@ Outcome run_framebuffer(gb::Gb& machine, const Options& opt) {
     return {0, "", gbtest::sha256_hex(fb.data(), fb.size())};
 }
 
+std::string describe_ppu(const gb::Gb& machine) {
+    const gb::Bus& bus = machine.bus();
+
+    std::vector<gb::u8> vram(0x2000);
+    for (std::size_t i = 0; i < vram.size(); ++i) {
+        vram[i] = bus.ppu().peek_vram(static_cast<gb::u16>(0x8000 + i));
+    }
+    std::vector<gb::u8> oam(0xA0);
+    for (std::size_t i = 0; i < oam.size(); ++i) {
+        oam[i] = bus.ppu().peek_oam(static_cast<gb::u16>(0xFE00 + i));
+    }
+
+    char buf[256];
+    std::snprintf(buf, sizeof(buf),
+                  "vram=%.16s oam=%.16s LCDC=%02X STAT=%02X SCY=%02X SCX=%02X LY=%02X "
+                  "LYC=%02X WY=%02X WX=%02X BGP=%02X cycles=%llu",
+                  gbtest::sha256_hex(vram.data(), vram.size()).c_str(),
+                  gbtest::sha256_hex(oam.data(), oam.size()).c_str(), bus.peek(0xFF40),
+                  bus.peek(0xFF41), bus.peek(0xFF42), bus.peek(0xFF43), bus.peek(0xFF44),
+                  bus.peek(0xFF45), bus.peek(0xFF4A), bus.peek(0xFF4B), bus.peek(0xFF47),
+                  static_cast<unsigned long long>(bus.cycles()));
+    return buf;
+}
+
 std::map<std::string, std::string> load_golden(const fs::path& path) {
     std::map<std::string, std::string> out;
     std::ifstream f(path);
@@ -290,6 +314,8 @@ int main(int argc, char** argv) {
             continue;
         }
 
+        const std::string rom_hash = gbtest::sha256_hex(rom.data(), rom.size());
+
         gb::Gb machine;
         std::string err;
         if (!machine.load_rom(std::move(rom), &err)) {
@@ -321,6 +347,10 @@ int main(int argc, char** argv) {
             if (it->second != result.hash) {
                 std::printf("FAIL %s - framebuffer %s, expected %s\n", rel.c_str(),
                             result.hash.c_str(), it->second.c_str());
+                // A hash mismatch says nothing about the cause. Report what the
+                // renderer was fed so a divergence in emulation can be told
+                // apart from a divergence in the drawing code itself.
+                std::printf("     rom=%.16s %s\n", rom_hash.c_str(), describe_ppu(machine).c_str());
                 ++failed;
                 continue;
             }
