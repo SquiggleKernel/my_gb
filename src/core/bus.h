@@ -40,6 +40,14 @@ class Bus {
     void write(u16 addr, u8 value);
     void tick(u64 tcycles);
 
+    // A 16-bit increment or decrement drives the register onto the address bus
+    // even with no read or write asserted, so an OAM address corrupts OAM.
+    void idu_pulse(u16 value);
+
+    // A read whose M-cycle also runs the increment unit over the same address.
+    // That combination corrupts OAM differently from a plain read.
+    u8 read_idu(u16 addr);
+
     // Side-effect free; for the debugger, tracer and tests.
     u8 peek(u16 addr) const;
     void poke(u16 addr, u8 value);

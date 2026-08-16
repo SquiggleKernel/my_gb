@@ -67,6 +67,11 @@ u16 Sm83::fetch16() {
 
 void Sm83::push16(u16 v) {
     bus_->tick(4);
+    // SP is decremented over the internal cycle with nothing else on the bus.
+    // The second decrement shares its M-cycle with the high byte write, and a
+    // write plus a decrement together still corrupt only once, which the write
+    // itself already accounts for.
+    bus_->idu_pulse(r_.sp);
     r_.sp = static_cast<u16>(r_.sp - 1);
     bus_->write(r_.sp, static_cast<u8>(v >> 8));
     r_.sp = static_cast<u16>(r_.sp - 1);
@@ -74,7 +79,9 @@ void Sm83::push16(u16 v) {
 }
 
 u16 Sm83::pop16() {
-    const u8 lo = bus_->read(r_.sp);
+    // The first read shares its M-cycle with an increment; the second one does
+    // not produce a glitched write, so pop corrupts three times, not four.
+    const u8 lo = bus_->read_idu(r_.sp);
     r_.sp = static_cast<u16>(r_.sp + 1);
     const u8 hi = bus_->read(r_.sp);
     r_.sp = static_cast<u16>(r_.sp + 1);

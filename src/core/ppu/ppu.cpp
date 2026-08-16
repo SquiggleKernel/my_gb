@@ -122,6 +122,86 @@ void Ppu::update_stat_line() {
     stat_line_ = line;
 }
 
+// Corruption is checked after the accessing M-cycle has already been ticked, so
+// the window is expressed in dots rather than in mode_: mode_ has already
+// flipped to drawing by the time the twentieth row's M-cycle ends at dot 80.
+bool Ppu::oam_bug_window() const {
+    return lcd_on() && ly_ < kVBlankLine && dot_ >= 4 && dot_ <= 76;
+}
+
+int Ppu::oam_row() const {
+    // Row 0 is already behind the scan by the time the first M-cycle of the
+    // line completes, which is why objects 0 and 1 are never the ones damaged.
+    return dot_ / 4;
+}
+
+u16 Ppu::oam_word(int row, int word) const {
+    const std::size_t i = static_cast<std::size_t>(row) * 8 + static_cast<std::size_t>(word) * 2;
+    return static_cast<u16>(oam_[i] | (static_cast<u16>(oam_[i + 1]) << 8));
+}
+
+void Ppu::set_oam_word(int row, int word, u16 value) {
+    const std::size_t i = static_cast<std::size_t>(row) * 8 + static_cast<std::size_t>(word) * 2;
+    oam_[i] = static_cast<u8>(value);
+    oam_[i + 1] = static_cast<u8>(value >> 8);
+}
+
+void Ppu::corrupt_row(int row, u16 first) {
+    set_oam_word(row, 0, first);
+    for (int w = 1; w < 4; ++w) {
+        set_oam_word(row, w, oam_word(row - 1, w));
+    }
+}
+
+void Ppu::oam_bug_write() {
+    if (!oam_bug_window()) {
+        return;
+    }
+    const int row = oam_row();
+    // Objects 0 and 1 sit in the first row and are wired past the bug.
+    if (row == 0) {
+        return;
+    }
+    const u16 a = oam_word(row, 0);
+    const u16 b = oam_word(row - 1, 0);
+    const u16 c = oam_word(row - 1, 2);
+    corrupt_row(row, static_cast<u16>(((a ^ c) & (b ^ c)) ^ c));
+}
+
+void Ppu::oam_bug_read() {
+    if (!oam_bug_window()) {
+        return;
+    }
+    const int row = oam_row();
+    if (row == 0) {
+        return;
+    }
+    const u16 a = oam_word(row, 0);
+    const u16 b = oam_word(row - 1, 0);
+    const u16 c = oam_word(row - 1, 2);
+    corrupt_row(row, static_cast<u16>(b | (a & c)));
+}
+
+void Ppu::oam_bug_read_write() {
+    if (!oam_bug_window()) {
+        return;
+    }
+    const int row = oam_row();
+    if (row >= 4 && row != 19) {
+        const u16 a = oam_word(row - 2, 0);
+        const u16 b = oam_word(row - 1, 0);
+        const u16 c = oam_word(row, 0);
+        const u16 d = oam_word(row - 1, 2);
+        set_oam_word(row - 1, 0, static_cast<u16>((b & (a | c | d)) | (a & c & d)));
+        for (int w = 0; w < 4; ++w) {
+            const u16 v = oam_word(row - 1, w);
+            set_oam_word(row, w, v);
+            set_oam_word(row - 2, w, v);
+        }
+    }
+    oam_bug_read();
+}
+
 bool Ppu::take_frame() {
     const bool ready = frame_ready_;
     frame_ready_ = false;
@@ -305,9 +385,16 @@ void Ppu::write(u16 addr, u8 value) {
                 stat_line_ = false;
                 fb_.fill(0);
             } else if (!was_on && lcd_on()) {
+                // The line the LCD restarts on has no OAM scan: the PPU picks
+                // up in HBlank and only reaches drawing at the usual dot, so
+                // nothing can corrupt OAM on that line (blargg 1-lcd_sync).
                 dot_ = 0;
                 ly_ = 0;
-                set_mode(PpuMode::OamScan);
+                window_line_ = 0;
+                mode_ = PpuMode::HBlank;
+                stat_ = static_cast<u8>(stat_ & 0xFC);
+                stat_line_ = false;
+                update_stat_line();
             }
             break;
         }

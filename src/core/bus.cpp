@@ -48,6 +48,10 @@ void Bus::tick(u64 tcycles) {
 
 u8 Bus::read(u16 addr) {
     tick(4);
+    // The corruption happens even though the read itself is blocked in mode 2.
+    if ((addr & 0xFF00) == 0xFE00) {
+        ppu_.oam_bug_read();
+    }
     // While OAM DMA runs the CPU only has a clean view of HRAM and IE, which
     // is why the copy routine always lives in HRAM.
     if (dma_active_ && addr < 0xFF80) {
@@ -58,6 +62,9 @@ u8 Bus::read(u16 addr) {
 
 void Bus::write(u16 addr, u8 value) {
     tick(4);
+    if ((addr & 0xFF00) == 0xFE00) {
+        ppu_.oam_bug_write();
+    }
     if (dma_active_ && addr < 0xFF80) {
         // The DMA register itself stays writable, restarting the transfer.
         if (addr != 0xFF46) {
@@ -65,6 +72,23 @@ void Bus::write(u16 addr, u8 value) {
         }
     }
     bus_write(addr, value);
+}
+
+void Bus::idu_pulse(u16 value) {
+    if ((value & 0xFF00) == 0xFE00) {
+        ppu_.oam_bug_write();
+    }
+}
+
+u8 Bus::read_idu(u16 addr) {
+    tick(4);
+    if ((addr & 0xFF00) == 0xFE00) {
+        ppu_.oam_bug_read_write();
+    }
+    if (dma_active_ && addr < 0xFF80) {
+        return 0xFF;
+    }
+    return bus_read(addr);
 }
 
 u8 Bus::bus_read(u16 addr) const {

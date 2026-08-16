@@ -373,12 +373,17 @@ void Sm83Ops::exec([[maybe_unused]] Sm83& c) {
             }
             if constexpr ((kHi & 1) == 0) {
                 c.bus_->write(addr, c.r_.a);
+            } else if constexpr (kPair >= 2) {
+                // LD A,(HL+) and LD A,(HL-) run the increment unit over the
+                // same address in the same M-cycle as the read.
+                c.r_.a = c.bus_->read_idu(addr);
             } else {
                 c.r_.a = c.bus_->read(addr);
             }
         } else if constexpr (kLo == 3) {
             const u16 v = get_rp<kPair>(c);
             c.bus_->tick(4);
+            c.bus_->idu_pulse(v);
             set_rp<kPair>(c, static_cast<u16>((kHi & 1) == 0 ? v + 1 : v - 1));
         } else if constexpr (kLo == 4) {
             set_r<kHi>(c, inc8(c, get_r<kHi>(c)));

@@ -35,6 +35,14 @@ class Ppu {
     // OAM DMA bypasses the mode-based access block.
     void dma_write_oam(u8 index, u8 value) { oam_[index] = value; }
 
+    // On DMG, touching OAM during mode 2 corrupts it, and so does merely
+    // putting an OAM address on the bus via the 16-bit increment unit. The
+    // access address and the written value do not matter, only the kind of
+    // access and which row the scan has reached.
+    void oam_bug_read();
+    void oam_bug_write();
+    void oam_bug_read_write();
+
     u8 peek_vram(u16 addr) const { return vram_[addr & 0x1FFF]; }
     u8 peek_oam(u16 addr) const { return oam_[addr & 0xFF]; }
 
@@ -52,6 +60,12 @@ class Ppu {
     void visit(Ar& ar);
 
   private:
+    bool oam_bug_window() const;
+    int oam_row() const;
+    u16 oam_word(int row, int word) const;
+    void set_oam_word(int row, int word, u16 value);
+    void corrupt_row(int row, u16 first);
+
     void set_mode(PpuMode m);
     void update_stat_line();
     void enter_line(u8 line);
