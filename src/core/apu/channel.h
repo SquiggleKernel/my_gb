@@ -88,6 +88,9 @@ struct WaveChannel {
     bool length_on = false;
     bool enabled = false;
     bool dac = false;
+    // Set for the duration of the tick in which a byte was latched. The CPU
+    // resolves its access at the end of the same tick, so this is the window.
+    bool latched = false;
 
     void reset();
     void step(u32 tcycles, const std::array<u8, 0x10>& ram);
@@ -110,6 +113,7 @@ struct WaveChannel {
         ar(length_on);
         ar(enabled);
         ar(dac);
+        ar(latched);
     }
 };
 
