@@ -182,6 +182,10 @@ Outcome run_mooneye(gb::Gb& machine, const Options& opt) {
 Outcome run_framebuffer(gb::Gb& machine, const Options& opt) {
     const gb::u64 cap = static_cast<gb::u64>(opt.timeout_frames) * gb::kTCyclesPerFrame;
     run_to_breakpoint(machine, cap);
+    // The run stops at an arbitrary instruction, which leaves the framebuffer
+    // holding the top of the current frame and the bottom of the previous one.
+    // Finish the frame first so the hash does not depend on where we stopped.
+    machine.run_frame();
     const auto& fb = machine.framebuffer();
     return {0, "", gbtest::sha256_hex(fb.data(), fb.size())};
 }

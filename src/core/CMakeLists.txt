@@ -6,6 +6,9 @@ add_library(gbcore STATIC
   serial.cpp
   timer.cpp
   apu/apu.cpp
+  apu/noise.cpp
+  apu/square.cpp
+  apu/wave.cpp
   cart/cartridge.cpp
   cart/header.cpp
   cart/mbc.cpp
