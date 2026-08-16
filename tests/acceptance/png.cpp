@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <vector>
 
 namespace gbtest {
@@ -114,13 +114,12 @@ bool write_grey_png(const std::string& path, const u8* pixels, int width, int he
     push_chunk(out, "IDAT", stored_zlib(raw));
     push_chunk(out, "IEND", {});
 
-    std::FILE* f = std::fopen(path.c_str(), "wb");
-    if (f == nullptr) {
+    std::ofstream f(path, std::ios::binary);
+    if (!f) {
         return false;
     }
-    const bool ok = std::fwrite(out.data(), 1, out.size(), f) == out.size();
-    std::fclose(f);
-    return ok;
+    f.write(reinterpret_cast<const char*>(out.data()), static_cast<std::streamsize>(out.size()));
+    return static_cast<bool>(f);
 }
 
 }  // namespace gbtest
