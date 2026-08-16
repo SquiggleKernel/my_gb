@@ -24,6 +24,13 @@ class Bus {
   public:
     Bus();
 
+    // Each component caches this Bus, so copying or moving one would leave the
+    // components attached to the wrong machine.
+    Bus(const Bus&) = delete;
+    Bus& operator=(const Bus&) = delete;
+    Bus(Bus&&) = delete;
+    Bus& operator=(Bus&&) = delete;
+
     void reset();
 
     void load_cartridge(std::unique_ptr<Cartridge> cart);

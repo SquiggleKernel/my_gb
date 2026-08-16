@@ -12,6 +12,7 @@ add_library(gbcore STATIC
   cpu/disasm.cpp
   cpu/sm83.cpp
   ppu/ppu.cpp
+  state/rewind.cpp
 )
 
 target_include_directories(gbcore PUBLIC ${CMAKE_SOURCE_DIR}/src)

@@ -15,6 +15,7 @@ add_executable(gb_unit
   unit/test_cartridge.cpp
   unit/test_scheduler.cpp
   unit/test_serialize.cpp
+  unit/test_state.cpp
   unit/test_timer.cpp
 )
 target_link_libraries(gb_unit PRIVATE gbcore Catch2::Catch2WithMain)
