@@ -48,8 +48,9 @@ void Bus::tick(u64 tcycles) {
 
 u8 Bus::read(u16 addr) {
     tick(4);
-    // While OAM DMA runs the CPU only has a clean view of HRAM.
-    if (dma_active_ && (addr < 0xFF80 || addr == 0xFFFF)) {
+    // While OAM DMA runs the CPU only has a clean view of HRAM and IE, which
+    // is why the copy routine always lives in HRAM.
+    if (dma_active_ && addr < 0xFF80) {
         return 0xFF;
     }
     return bus_read(addr);
@@ -57,7 +58,7 @@ u8 Bus::read(u16 addr) {
 
 void Bus::write(u16 addr, u8 value) {
     tick(4);
-    if (dma_active_ && (addr < 0xFF80 || addr == 0xFFFF)) {
+    if (dma_active_ && addr < 0xFF80) {
         // The DMA register itself stays writable, restarting the transfer.
         if (addr != 0xFF46) {
             return;
@@ -198,10 +199,14 @@ void Bus::poke(u16 addr, u8 value) { bus_write(addr, value); }
 
 void Bus::start_oam_dma(u8 page) {
     dma_page_ = page;
-    dma_index_ = 0;
-    // One M-cycle of setup before the first byte moves.
-    dma_delay_ = 8;
     dma_active_ = true;
+    // The FF46 write and the first byte of the copy share an M-cycle, so the
+    // transfer is already one byte in by the time the CPU sees the next cycle.
+    // Getting this phase wrong pushes the 160 M-cycle window past the delay
+    // loop that DMA routines run in HRAM (mooneye call_timing, push_timing).
+    ppu_.dma_write_oam(0, bus_read(static_cast<u16>(static_cast<u16>(page) << 8)));
+    dma_index_ = 1;
+    dma_delay_ = 3;
 }
 
 void Bus::step_oam_dma(u64 tcycles) {
@@ -217,7 +222,9 @@ void Bus::step_oam_dma(u64 tcycles) {
             dma_active_ = false;
             return;
         }
-        dma_delay_ = 4;
+        // Three idle cycles plus the transfer cycle gives one byte per M-cycle,
+        // so the whole copy spans 160 M-cycles (mooneye oam_dma_timing).
+        dma_delay_ = 3;
     }
 }
 
