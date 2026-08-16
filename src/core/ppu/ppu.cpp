@@ -385,10 +385,10 @@ void Ppu::write(u16 addr, u8 value) {
                 stat_line_ = false;
                 fb_.fill(0);
             } else if (!was_on && lcd_on()) {
-                // The line the LCD restarts on has no OAM scan: the PPU picks
-                // up in HBlank and only reaches drawing at the usual dot, so
-                // nothing can corrupt OAM on that line (blargg 1-lcd_sync).
-                dot_ = 0;
+                // The line the LCD restarts on has no OAM scan, and it is one
+                // M-cycle short: blargg 1-lcd_sync pins LY to increment 110
+                // rather than 114 M-cycles after the enabling write.
+                dot_ = 4;
                 ly_ = 0;
                 window_line_ = 0;
                 mode_ = PpuMode::HBlank;
