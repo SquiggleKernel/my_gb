@@ -13,6 +13,7 @@ endif()
 option(GB_BUILD_SDL3     "Build the SDL3 frontend"     ON)
 option(GB_BUILD_HEADLESS "Build the headless runner"   ON)
 option(GB_BUILD_LIBRETRO "Build the libretro core"     OFF)
+option(GB_BUILD_WASM     "Build the WebAssembly frontend" OFF)
 option(GB_BUILD_DEBUGGER "Build the ImGui debugger"    OFF)
 option(GB_BUILD_BENCH    "Build benchmarks"            OFF)
 option(GB_BUILD_TESTS    "Build tests"                 ON)
@@ -32,6 +33,14 @@ endif()
 
 if(GB_BUILD_SDL3)
   add_subdirectory(src/frontend/sdl3)
+endif()
+
+if(GB_BUILD_LIBRETRO)
+  add_subdirectory(src/frontend/libretro)
+endif()
+
+if(GB_BUILD_WASM)
+  add_subdirectory(src/frontend/wasm)
 endif()
 
 if(GB_BUILD_TESTS)

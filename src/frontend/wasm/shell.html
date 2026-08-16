@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>my_gb</title>
+<style>
+  body {
+    background: #1b1b1b;
+    color: #d8d8d8;
+    font: 14px/1.5 system-ui, sans-serif;
+    margin: 0;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  canvas {
+    image-rendering: pixelated;
+    width: 640px;
+    height: 576px;
+    background: #9bbc0f;
+  }
+  #error { color: #e06c6c; min-height: 1.5em; }
+  #help { color: #888; }
+</style>
+</head>
+<body>
+<input type="file" id="rom" accept=".gb">
+<canvas id="screen" width="160" height="144"></canvas>
+<div id="error"></div>
+<div id="help">arrows move, Z is A, X is B, Enter is Start, right Shift is Select</div>
+
+<script>
+var canvas = document.getElementById('screen');
+var ctx = canvas.getContext('2d');
+var image = ctx.createImageData(160, 144);
+
+// Called once per emulated frame with a pointer into the wasm heap.
+function gbDrawFrame(ptr, width, height) {
+    image.data.set(Module.HEAPU8.subarray(ptr, ptr + width * height * 4));
+    ctx.putImageData(image, 0, 0);
+}
+
+function gbReportError(message) {
+    document.getElementById('error').textContent = message;
+}
+
+var Module = {
+    canvas: canvas,
+    print: function (text) { console.log(text); },
+    printErr: function (text) { console.error(text); }
+};
+
+document.getElementById('rom').addEventListener('change', function (ev) {
+    var file = ev.target.files[0];
+    if (!file) {
+        return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+        var bytes = new Uint8Array(reader.result);
+        var ptr = Module._malloc(bytes.length);
+        Module.HEAPU8.set(bytes, ptr);
+        gbReportError('');
+        var ok = Module._gb_load_rom(ptr, bytes.length);
+        Module._free(ptr);
+        if (ok) {
+            canvas.focus();
+        }
+    };
+    reader.readAsArrayBuffer(file);
+});
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
