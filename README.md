@@ -2,7 +2,7 @@
 
 A Game Boy (DMG) emulator written in C++20.
 
-**[Run it in the browser](https://squigglekernel.github.io/my_gb/)** — the
+**[Run it in the browser](https://squigglekernel.github.io/my_gb/)** - the
 WebAssembly build, rebuilt from `main` on every push. Pick a `.gb` file from
 your own disk; no ROMs are bundled.
 
