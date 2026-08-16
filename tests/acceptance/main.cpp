@@ -48,6 +48,14 @@ bool read_file(const fs::path& path, std::vector<gb::u8>& out) {
     return static_cast<bool>(f.read(reinterpret_cast<char*>(out.data()), size));
 }
 
+// Suites that declare REQUIRE_CGB, so a DMG core cannot pass them however
+// accurate it is. interrupt_time switches the CPU to double speed; cgb_sound
+// drives the CGB-only wave behaviour.
+bool cgb_only(const std::string& rel) {
+    return rel.find("cgb_sound") != std::string::npos ||
+           rel.find("interrupt_time") != std::string::npos;
+}
+
 Kind classify(const std::string& rel) {
     if (rel.find("blargg") != std::string::npos) {
         return Kind::Blargg;
@@ -333,6 +341,14 @@ int main(int argc, char** argv) {
     for (const auto& path : roms) {
         const std::string rel = fs::relative(path, opt.roms).generic_string();
         if (!opt.filter.empty() && rel.find(opt.filter) == std::string::npos) {
+            continue;
+        }
+
+        if (cgb_only(rel)) {
+            if (opt.verbose) {
+                std::printf("SKIP %s - CGB only\n", rel.c_str());
+            }
+            ++skipped;
             continue;
         }
 
