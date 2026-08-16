@@ -135,7 +135,6 @@ void Ppu::render_scanline() {
 
     const bool bg_enabled = (lcdc_ & 0x01) != 0;
     const bool win_enabled = (lcdc_ & 0x20) != 0 && bg_enabled && ly_ >= wy_ && wx_ <= 166;
-    const u16 tile_data = (lcdc_ & 0x10) != 0 ? 0x8000 : 0x9000;
     const bool signed_index = (lcdc_ & 0x10) == 0;
     const u16 bg_map = (lcdc_ & 0x08) != 0 ? 0x9C00 : 0x9800;
     const u16 win_map = (lcdc_ & 0x40) != 0 ? 0x9C00 : 0x9800;
@@ -174,13 +173,14 @@ void Ppu::render_scanline() {
                     static_cast<u16>(map_base + static_cast<u16>(ty) * 32 + static_cast<u16>(tx));
                 const u8 tile = vram_[static_cast<std::size_t>(map_addr & 0x1FFF)];
 
-                u16 tile_addr;
-                if (signed_index) {
-                    const int off = static_cast<int>(static_cast<i8>(tile)) * 16;
-                    tile_addr = static_cast<u16>(static_cast<int>(tile_data) + off);
-                } else {
-                    tile_addr = static_cast<u16>(tile_data + static_cast<u16>(tile) * 16);
-                }
+                // 0x8800 addressing puts index 128 at 0x8800 and index 0 at
+                // 0x9000, which is just the index with bit 7 flipped. Doing it
+                // that way keeps the arithmetic unsigned and non-negative
+                // throughout instead of narrowing to a signed offset.
+                const u16 tile_addr =
+                    signed_index
+                        ? static_cast<u16>(0x8800 + (static_cast<u16>(tile) ^ 0x80) * 16)
+                        : static_cast<u16>(0x8000 + static_cast<u16>(tile) * 16);
 
                 const int fine_y =
                     in_window ? (window_line_ % 8) : ((static_cast<int>(scy_) + ly_) % 8);

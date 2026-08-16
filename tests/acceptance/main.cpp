@@ -25,6 +25,7 @@ struct Options {
     long timeout_frames = 6000;
     bool update_golden = false;
     bool verbose = false;
+    bool trace = false;
 };
 
 struct Outcome {
@@ -214,6 +215,32 @@ std::string describe_ppu(const gb::Gb& machine) {
     return buf;
 }
 
+// Replays one frame after the test settles, sampling what the renderer was fed
+// as each scanline finishes. End-of-frame state matching does not prove the
+// per-line inputs matched.
+void trace_scanlines(gb::Gb& machine, int first, int last) {
+    gb::PpuMode prev = machine.bus().ppu().mode();
+    const gb::u64 stop = machine.bus().cycles() + gb::kTCyclesPerFrame * 2;
+    std::printf("  LY LCDC STAT SCY SCX  WY  WX wline\n");
+    while (machine.bus().cycles() < stop) {
+        machine.step_instruction();
+        const gb::Bus& bus = machine.bus();
+        const gb::PpuMode mode = bus.ppu().mode();
+        if (mode == gb::PpuMode::HBlank && prev != gb::PpuMode::HBlank) {
+            const int ly = bus.ppu().ly();
+            if (ly >= first && ly <= last) {
+                std::printf("  %2d   %02X   %02X  %02X  %02X  %02X  %02X    %02X\n", ly,
+                            bus.peek(0xFF40), bus.peek(0xFF41), bus.peek(0xFF42), bus.peek(0xFF43),
+                            bus.peek(0xFF4A), bus.peek(0xFF4B), bus.ppu().window_line());
+            }
+            if (ly > last) {
+                return;
+            }
+        }
+        prev = mode;
+    }
+}
+
 std::map<std::string, std::string> load_golden(const fs::path& path) {
     std::map<std::string, std::string> out;
     std::ifstream f(path);
@@ -265,6 +292,8 @@ int main(int argc, char** argv) {
             opt.dump_png = argv[++i];
         } else if (arg == "--timeout-frames" && i + 1 < argc) {
             opt.timeout_frames = std::strtol(argv[++i], nullptr, 10);
+        } else if (arg == "--trace-scanlines") {
+            opt.trace = true;
         } else if (arg == "--update-golden") {
             opt.update_golden = true;
         } else if (arg == "--verbose") {
@@ -351,6 +380,9 @@ int main(int argc, char** argv) {
                 // renderer was fed so a divergence in emulation can be told
                 // apart from a divergence in the drawing code itself.
                 std::printf("     rom=%.16s %s\n", rom_hash.c_str(), describe_ppu(machine).c_str());
+                if (opt.trace) {
+                    trace_scanlines(machine, 40, 60);
+                }
                 ++failed;
                 continue;
             }
