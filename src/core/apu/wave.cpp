@@ -23,7 +23,9 @@ void WaveChannel::step(u32 tcycles, const std::array<u8, 0x10>& ram) {
         timer = period_tcycles();
         position = static_cast<u8>((position + 1) & 31);
         sample = ram[position >> 1];
-        latched = true;
+        // A CPU access resolves at the end of its M-cycle, so it only shares
+        // the wave RAM bus when the fetch lands on that same final T-cycle.
+        latched = tcycles == 0;
     }
     timer = static_cast<u16>(timer - tcycles);
 }
