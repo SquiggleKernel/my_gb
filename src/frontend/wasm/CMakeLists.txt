@@ -5,6 +5,8 @@ endif()
 add_executable(gb_wasm main.cpp)
 target_link_libraries(gb_wasm PRIVATE gbcore)
 gb_set_warnings(gb_wasm)
+# EM_ASM takes its arguments as $0, $1 ... which -Wpedantic rejects.
+target_compile_options(gb_wasm PRIVATE -Wno-dollar-in-identifier-extension)
 
 set(GB_WASM_SHELL ${CMAKE_CURRENT_SOURCE_DIR}/shell.html)
 
