@@ -67,8 +67,14 @@ void Timer::write(u16 addr, u8 value) {
 
 void Timer::set_counter(u16 value) {
     const bool before = edge_input();
+    const bool div_bit_before = (counter_ & 0x0010) != 0;
     counter_ = value;
     detect_edge(before);
+    // The APU frame sequencer is clocked by DIV bit 4 falling, which is why
+    // resetting DIV can step the envelope and length counters.
+    if (div_bit_before && (counter_ & 0x0010) == 0 && bus_ != nullptr) {
+        bus_->apu().div_edge();
+    }
 }
 
 bool Timer::edge_input() const {

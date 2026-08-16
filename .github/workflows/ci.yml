@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # The frontends need SDL3, which is not worth installing on every runner;
+  # the core and the test binaries are what CI actually gates on.
+  CORE_ONLY: -DGB_BUILD_SDL3=OFF
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            bin: build/tests
+          - name: linux-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+            bin: build/tests
+          - name: windows-msvc
+            os: windows-latest
+            bin: build/tests/Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache test ROMs
+        uses: actions/cache@v4
+        with:
+          path: tests/roms
+          key: roms-${{ hashFiles('tools/fetch_test_roms.py') }}
+
+      - name: Fetch test ROMs
+        run: python3 tools/fetch_test_roms.py --only blargg && python3 tools/fetch_test_roms.py --only dmg-acid2
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release $CORE_ONLY
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Unit tests
+        run: ${{ matrix.bin }}/gb_unit
+
+      - name: Acceptance suites
+        shell: bash
+        run: |
+          set -e
+          for suite in cpu_instrs instr_timing mem_timing halt_bug dmg-acid2; do
+            echo "== $suite =="
+            ${{ matrix.bin }}/gb_acceptance \
+              --roms tests/roms --golden tests/golden \
+              --filter "$suite" --timeout-frames 4000
+          done
+
+  sanitizers:
+    name: asan+ubsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache test ROMs
+        uses: actions/cache@v4
+        with:
+          path: tests/roms
+          key: roms-${{ hashFiles('tools/fetch_test_roms.py') }}
+
+      - name: Fetch test ROMs
+        run: python3 tools/fetch_test_roms.py --only blargg && python3 tools/fetch_test_roms.py --only dmg-acid2
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGB_SANITIZE=ON $CORE_ONLY
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Unit tests
+        run: build/tests/gb_unit
+
+      - name: Acceptance suites
+        run: |
+          set -e
+          for suite in cpu_instrs mem_timing dmg-acid2; do
+            build/tests/gb_acceptance --roms tests/roms --golden tests/golden \
+              --filter "$suite" --timeout-frames 4000
+          done
+
+  core-purity:
+    name: core has no frontend deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./tools/check_core_purity.sh
+
+  clang-tidy:
+    name: clang-tidy (changed files)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-tidy
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DGB_BUILD_TESTS=OFF $CORE_ONLY
+
+      - name: Run on changed files
+        run: |
+          set -e
+          base=${{ github.event.pull_request.base.sha }}
+          files=$(git diff --name-only "$base"...HEAD -- 'src/**/*.cpp' | tr '\n' ' ')
+          if [ -z "$files" ]; then
+            echo "no changed sources"
+            exit 0
+          fi
+          clang-tidy -p build $files

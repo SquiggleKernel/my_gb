@@ -10,6 +10,11 @@ function(gb_set_warnings target)
       -Wshadow -Wconversion -Wsign-conversion
       -Wold-style-cast -Wnon-virtual-dtor -Wcast-align
       -Wunused -Woverloaded-virtual -Wdouble-promotion)
+    # Catch2's TEST_CASE expands __COUNTER__, which clang 22 reports as a C2y
+    # extension under -Wpedantic.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      target_compile_options(${target} PRIVATE -Wno-c2y-extensions)
+    endif()
     if(GB_WERROR)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
