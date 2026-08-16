@@ -40,6 +40,9 @@ class Ppu {
 
     PpuMode mode() const { return mode_; }
     u8 ly() const { return ly_; }
+    // Counts only the lines the window actually drew, which is what the window
+    // fetcher indexes with rather than LY - WY.
+    u8 window_line() const { return window_line_; }
     bool lcd_on() const { return (lcdc_ & 0x80) != 0; }
 
     const std::array<u8, kFramebufferPixels>& framebuffer() const { return fb_; }

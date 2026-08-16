@@ -205,12 +205,12 @@ std::string describe_ppu(const gb::Gb& machine) {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
                   "vram=%.16s oam=%.16s LCDC=%02X STAT=%02X SCY=%02X SCX=%02X LY=%02X "
-                  "LYC=%02X WY=%02X WX=%02X BGP=%02X cycles=%llu",
+                  "LYC=%02X WY=%02X WX=%02X BGP=%02X wline=%02X cycles=%llu",
                   gbtest::sha256_hex(vram.data(), vram.size()).c_str(),
                   gbtest::sha256_hex(oam.data(), oam.size()).c_str(), bus.peek(0xFF40),
                   bus.peek(0xFF41), bus.peek(0xFF42), bus.peek(0xFF43), bus.peek(0xFF44),
                   bus.peek(0xFF45), bus.peek(0xFF4A), bus.peek(0xFF4B), bus.peek(0xFF47),
-                  static_cast<unsigned long long>(bus.cycles()));
+                  bus.ppu().window_line(), static_cast<unsigned long long>(bus.cycles()));
     return buf;
 }
 
