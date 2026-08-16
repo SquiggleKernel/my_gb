@@ -1,0 +1,91 @@
+#pragma once
+
+#include <array>
+#include <memory>
+
+#include "core/apu/apu.h"
+#include "core/cart/cartridge.h"
+#include "core/irq.h"
+#include "core/joypad.h"
+#include "core/ppu/ppu.h"
+#include "core/scheduler.h"
+#include "core/serial.h"
+#include "core/state/serialize.h"
+#include "core/timer.h"
+#include "core/types.h"
+
+namespace gb {
+
+// read()/write() tick four T-cycles before the access resolves. Every other
+// internal CPU cycle goes through tick(). Nothing in the core may touch memory
+// without advancing time first -- that is what makes mem_timing and oam_bug
+// reachable.
+class Bus {
+  public:
+    Bus();
+
+    void reset();
+
+    void load_cartridge(std::unique_ptr<Cartridge> cart);
+    Cartridge* cartridge() const { return cart_.get(); }
+
+    u8 read(u16 addr);
+    void write(u16 addr, u8 value);
+    void tick(u64 tcycles);
+
+    // Side-effect free; for the debugger, tracer and tests.
+    u8 peek(u16 addr) const;
+    void poke(u16 addr, u8 value);
+
+    void request_irq(u8 mask) { if_ = static_cast<u8>(if_ | mask); }
+    void clear_irq(u8 mask) { if_ = static_cast<u8>(if_ & ~mask); }
+    u8 if_reg() const { return static_cast<u8>(if_ | 0xE0); }
+    u8 ie_reg() const { return ie_; }
+    void write_if(u8 v) { if_ = static_cast<u8>(v & 0x1F); }
+    void write_ie(u8 v) { ie_ = v; }
+    u8 pending_irqs() const { return static_cast<u8>(if_ & ie_ & 0x1F); }
+
+    u64 cycles() const { return sched_.now(); }
+
+    Scheduler& scheduler() { return sched_; }
+    Timer& timer() { return timer_; }
+    Ppu& ppu() { return ppu_; }
+    const Ppu& ppu() const { return ppu_; }
+    Apu& apu() { return apu_; }
+    Serial& serial() { return serial_; }
+    Joypad& joypad() { return joypad_; }
+
+    bool oam_dma_active() const { return dma_active_; }
+
+    template <typename Ar>
+    void visit(Ar& ar);
+
+  private:
+    u8 bus_read(u16 addr) const;
+    void bus_write(u16 addr, u8 value);
+    u8 io_read(u16 addr) const;
+    void io_write(u16 addr, u8 value);
+    void start_oam_dma(u8 page);
+    void step_oam_dma(u64 tcycles);
+
+    Scheduler sched_;
+    Timer timer_;
+    Ppu ppu_;
+    Apu apu_;
+    Serial serial_;
+    Joypad joypad_;
+    std::unique_ptr<Cartridge> cart_;
+
+    std::array<u8, 0x2000> wram_{};
+    std::array<u8, 0x7F> hram_{};
+
+    u8 if_ = 0;
+    u8 ie_ = 0;
+
+    u8 dma_page_ = 0xFF;
+    u16 dma_index_ = 0;
+    u16 dma_delay_ = 0;
+    bool dma_active_ = false;
+};
+
+}  // namespace gb

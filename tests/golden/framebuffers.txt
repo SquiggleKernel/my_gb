@@ -1,0 +1,2 @@
+# <rom path relative to tests/roms> <sha256 of the 160x144 colour index buffer>
+dmg-acid2/dmg-acid2.gb f844ea760a6f1fe137f7f992c7ab1c72d34c7fcd3a807b4174a78eb04a32a458

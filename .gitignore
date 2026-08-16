@@ -30,7 +30,7 @@ _deps/
 *.su
 *.idb
 *.pdb
-core
+core.[0-9]*
 vgcore.*
 perf.data*
 
@@ -39,6 +39,9 @@ perf.data*
 *.gbc
 *.sav
 *.state
+
+# Fetched test suites; see tools/fetch_test_roms.py
+tests/roms/
 
 # Editors / tooling
 .vscode/
