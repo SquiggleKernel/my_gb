@@ -141,47 +141,59 @@ void Ppu::render_scanline() {
     const u16 win_map = (lcdc_ & 0x40) != 0 ? 0x9C00 : 0x9800;
 
     bool window_drawn = false;
+    // The tile row only changes every eighth pixel, so the map fetch and the
+    // two pattern fetches are hoisted out of the per-pixel path.
+    bool have_tile = false;
+    bool cached_window = false;
+    u8 bg_lo = 0;
+    u8 bg_hi = 0;
+
     for (int x = 0; x < kScreenWidth; ++x) {
         u8 color = 0;
         if (bg_enabled) {
             const bool in_window = win_enabled && x + 7 >= static_cast<int>(wx_);
-            u16 map_base;
-            u8 tx;
-            u8 ty;
-            if (in_window) {
-                window_drawn = true;
-                const int wx_off = x + 7 - static_cast<int>(wx_);
-                map_base = win_map;
-                tx = static_cast<u8>((wx_off / 8) & 31);
-                ty = static_cast<u8>(window_line_ / 8);
-            } else {
-                map_base = bg_map;
-                tx = static_cast<u8>(((static_cast<int>(scx_) + x) / 8) & 31);
-                ty = static_cast<u8>((((static_cast<int>(scy_) + ly_) / 8) & 31));
-            }
-
-            const u16 map_addr =
-                static_cast<u16>(map_base + static_cast<u16>(ty) * 32 + static_cast<u16>(tx));
-            const u8 tile = vram_[static_cast<std::size_t>(map_addr & 0x1FFF)];
-
-            u16 tile_addr;
-            if (signed_index) {
-                const int off = static_cast<int>(static_cast<i8>(tile)) * 16;
-                tile_addr = static_cast<u16>(static_cast<int>(tile_data) + off);
-            } else {
-                tile_addr = static_cast<u16>(tile_data + static_cast<u16>(tile) * 16);
-            }
-
-            const int fine_y =
-                in_window ? (window_line_ % 8) : ((static_cast<int>(scy_) + ly_) % 8);
             const int fine_x =
                 in_window ? ((x + 7 - static_cast<int>(wx_)) % 8) : ((static_cast<int>(scx_) + x) % 8);
 
-            const std::size_t lo_idx = static_cast<std::size_t>((tile_addr + fine_y * 2) & 0x1FFF);
-            const u8 lo = vram_[lo_idx];
-            const u8 hi = vram_[(lo_idx + 1) & 0x1FFF];
+            if (!have_tile || in_window != cached_window || fine_x == 0) {
+                u16 map_base;
+                u8 tx;
+                u8 ty;
+                if (in_window) {
+                    window_drawn = true;
+                    map_base = win_map;
+                    tx = static_cast<u8>((((x + 7 - static_cast<int>(wx_)) / 8) & 31));
+                    ty = static_cast<u8>(window_line_ / 8);
+                } else {
+                    map_base = bg_map;
+                    tx = static_cast<u8>(((static_cast<int>(scx_) + x) / 8) & 31);
+                    ty = static_cast<u8>((((static_cast<int>(scy_) + ly_) / 8) & 31));
+                }
+
+                const u16 map_addr =
+                    static_cast<u16>(map_base + static_cast<u16>(ty) * 32 + static_cast<u16>(tx));
+                const u8 tile = vram_[static_cast<std::size_t>(map_addr & 0x1FFF)];
+
+                u16 tile_addr;
+                if (signed_index) {
+                    const int off = static_cast<int>(static_cast<i8>(tile)) * 16;
+                    tile_addr = static_cast<u16>(static_cast<int>(tile_data) + off);
+                } else {
+                    tile_addr = static_cast<u16>(tile_data + static_cast<u16>(tile) * 16);
+                }
+
+                const int fine_y =
+                    in_window ? (window_line_ % 8) : ((static_cast<int>(scy_) + ly_) % 8);
+                const std::size_t lo_idx =
+                    static_cast<std::size_t>((tile_addr + fine_y * 2) & 0x1FFF);
+                bg_lo = vram_[lo_idx];
+                bg_hi = vram_[(lo_idx + 1) & 0x1FFF];
+                cached_window = in_window;
+                have_tile = true;
+            }
+
             const int bit = 7 - fine_x;
-            color = static_cast<u8>((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+            color = static_cast<u8>((((bg_hi >> bit) & 1) << 1) | ((bg_lo >> bit) & 1));
         }
         bg_color[static_cast<std::size_t>(x)] = color;
         fb_[row + static_cast<std::size_t>(x)] = shade(bgp_, color);

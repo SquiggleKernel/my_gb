@@ -43,6 +43,10 @@ if(GB_BUILD_WASM)
   add_subdirectory(src/frontend/wasm)
 endif()
 
+if(GB_BUILD_BENCH)
+  add_subdirectory(bench)
+endif()
+
 if(GB_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
