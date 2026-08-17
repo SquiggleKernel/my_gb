@@ -2,6 +2,8 @@
 
 A Game Boy (DMG) emulator written in C++20.
 
+[![Tetris running in my_gb](docs/tetris.gif)](https://squigglekernel.github.io/my_gb/)
+
 **[Run it in the browser](https://squigglekernel.github.io/my_gb/)** - the
 WebAssembly build, rebuilt from `main` on every push. Pick a `.gb` file from
 your own disk; no ROMs are bundled.
