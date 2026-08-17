@@ -65,10 +65,25 @@ matching the result word in the framebuffer.
 | blargg mem_timing, mem_timing-2 | 4/4, 4/4 |
 | blargg halt_bug | pass |
 | blargg dmg_sound | 9/12 |
-| blargg oam_bug | 2/8 |
+| blargg oam_bug | 7/8 |
 | dmg-acid2 | pixel-identical to the reference |
-| mooneye | 65/115 |
+| mooneye | 82/115 |
 
-The OAM corruption bug is not emulated. The three failing sound tests cover
-wave RAM access while channel 3 is playing, which needs the CPU access to
-resolve at a known offset inside the M-cycle.
+Twenty of the mooneye ROMs that do not pass are asking a question a DMG cannot
+answer: the SGB, CGB, AGB, MGB and DMG0 boot tests check register values this
+model never has, `utils/` holds tools rather than tests, and `manual-only` has
+to be looked at. The suite still counts them, so 82/115 understates it; the
+failures worth chasing are the eighteen below.
+
+Eight of those are the PPU: `intr_2_*`, `lcdon_*`, `stat_lyc_onoff` and
+`vblank_stat_intr` all turn on when a mode change becomes visible in STAT
+relative to the interrupt it raises, which is a dot-level question the current
+mode-boundary model does not answer. Mode 3 does now stretch for objects and
+the window, which is a prerequisite for those, but on its own moves none of
+them.
+
+The three failing sound tests cover wave RAM access while channel 3 is playing,
+which needs the CPU access to resolve at a known offset inside the M-cycle. The
+three `boot_*-dmgABCmgb` tests and `boot_sclk_align` want the exact machine
+state a real boot ROM leaves behind. `oam_dma_start`, `rapid_toggle` and
+`oam_bug/7-timing_effect` are each a cycle off somewhere of their own.
