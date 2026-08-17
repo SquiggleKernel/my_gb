@@ -28,6 +28,9 @@ void Bus::reset() {
     dma_index_ = 0;
     dma_delay_ = 0;
     dma_active_ = false;
+    dma_latch_ = 0xFF;
+    dma_pending_page_ = 0xFF;
+    dma_start_delay_ = 0;
 }
 
 void Bus::load_cartridge(std::unique_ptr<Cartridge> cart) { cart_ = std::move(cart); }
@@ -41,7 +44,7 @@ void Bus::tick(u64 tcycles) {
     if (cart_) {
         cart_->tick(tcycles);
     }
-    if (dma_active_) {
+    if (dma_active_ || dma_start_delay_ > 0) {
         step_oam_dma(tcycles);
     }
 }
@@ -52,10 +55,8 @@ u8 Bus::read(u16 addr) {
     if ((addr & 0xFF00) == 0xFE00) {
         ppu_.oam_bug_read();
     }
-    // While OAM DMA runs the CPU only has a clean view of HRAM and IE, which
-    // is why the copy routine always lives in HRAM.
-    if (dma_active_ && addr < 0xFF80) {
-        return 0xFF;
+    if (dma_active_) {
+        return dma_cpu_read(addr);
     }
     return bus_read(addr);
 }
@@ -65,11 +66,8 @@ void Bus::write(u16 addr, u8 value) {
     if ((addr & 0xFF00) == 0xFE00) {
         ppu_.oam_bug_write();
     }
-    if (dma_active_ && addr < 0xFF80) {
-        // The DMA register itself stays writable, restarting the transfer.
-        if (addr != 0xFF46) {
-            return;
-        }
+    if (dma_active_ && dma_blocks_write(addr)) {
+        return;
     }
     bus_write(addr, value);
 }
@@ -85,8 +83,8 @@ u8 Bus::read_idu(u16 addr) {
     if ((addr & 0xFF00) == 0xFE00) {
         ppu_.oam_bug_read_write();
     }
-    if (dma_active_ && addr < 0xFF80) {
-        return 0xFF;
+    if (dma_active_) {
+        return dma_cpu_read(addr);
     }
     return bus_read(addr);
 }
@@ -221,30 +219,87 @@ u8 Bus::peek(u16 addr) const {
 
 void Bus::poke(u16 addr, u8 value) { bus_write(addr, value); }
 
+// Source pages 0x80..0x9F read VRAM and so drive the video bus; everything else
+// reads ROM, cartridge RAM or WRAM and drives the external one.
+Bus::BusKind Bus::dma_bus() const {
+    return (dma_page_ >= 0x80 && dma_page_ < 0xA0) ? BusKind::Video : BusKind::External;
+}
+
+u8 Bus::dma_source_read(u16 src) const {
+    // Pages from 0xE0 up alias WRAM the way echo RAM does; the transfer never
+    // reads OAM or the I/O page back into itself.
+    if (src >= 0xE000) {
+        return wram_[src & 0x1FFF];
+    }
+    return bus_read(src);
+}
+
+u8 Bus::dma_cpu_read(u16 addr) const {
+    // The I/O page, HRAM and IE sit inside the CPU and stay readable throughout,
+    // which is why a DMA wait loop can live in HRAM whatever the source is.
+    if (addr >= 0xFF00) {
+        return bus_read(addr);
+    }
+    // OAM belongs to the transfer for its whole duration.
+    if (addr >= 0xFE00) {
+        return 0xFF;
+    }
+    if (bus_kind(addr) == dma_bus()) {
+        return dma_latch_;
+    }
+    return bus_read(addr);
+}
+
+bool Bus::dma_blocks_write(u16 addr) const {
+    if (addr >= 0xFF00) {
+        return false;
+    }
+    if (addr >= 0xFE00) {
+        return true;
+    }
+    return bus_kind(addr) == dma_bus();
+}
+
 void Bus::start_oam_dma(u8 page) {
-    dma_page_ = page;
-    dma_active_ = true;
-    // The FF46 write and the first byte of the copy share an M-cycle, so the
-    // transfer is already one byte in by the time the CPU sees the next cycle.
-    // Getting this phase wrong pushes the 160 M-cycle window past the delay
-    // loop that DMA routines run in HRAM (mooneye call_timing, push_timing).
-    ppu_.dma_write_oam(0, bus_read(static_cast<u16>(static_cast<u16>(page) << 8)));
-    dma_index_ = 1;
-    dma_delay_ = 3;
+    // The write only arms the transfer; the bus is taken two M-cycles later. A
+    // write landing on a running transfer lets that one keep the bus until the
+    // new one takes over (mooneye oam_dma_restart).
+    //
+    // The constant is three M-cycles rather than two because an access resolves
+    // after its tick: Bus::read samples dma_active_ once the M-cycle it sits in
+    // has already been counted, so it would see the transfer one M-cycle sooner
+    // than hardware does. Arming a cycle later cancels that out. Anything from 9
+    // to 12 lands the takeover in the same M-cycle; 12 is the one that keeps the
+    // one-byte-per-M-cycle pacing in phase with the CPU.
+    dma_pending_page_ = page;
+    dma_start_delay_ = 12;
 }
 
 void Bus::step_oam_dma(u64 tcycles) {
     for (u64 i = 0; i < tcycles; ++i) {
+        if (dma_start_delay_ > 0) {
+            --dma_start_delay_;
+            if (dma_start_delay_ == 0) {
+                dma_page_ = dma_pending_page_;
+                dma_index_ = 0;
+                dma_delay_ = 0;
+                dma_active_ = true;
+            }
+        }
+        if (!dma_active_) {
+            continue;
+        }
         if (dma_delay_ > 0) {
             --dma_delay_;
             continue;
         }
         const u16 src = static_cast<u16>((static_cast<u16>(dma_page_) << 8) | dma_index_);
-        ppu_.dma_write_oam(static_cast<u8>(dma_index_), bus_read(src));
+        dma_latch_ = dma_source_read(src);
+        ppu_.dma_write_oam(static_cast<u8>(dma_index_), dma_latch_);
         ++dma_index_;
         if (dma_index_ >= 0xA0) {
             dma_active_ = false;
-            return;
+            continue;
         }
         // Three idle cycles plus the transfer cycle gives one byte per M-cycle,
         // so the whole copy spans 160 M-cycles (mooneye oam_dma_timing).
@@ -268,6 +323,9 @@ void Bus::visit(Ar& ar) {
     ar(dma_index_);
     ar(dma_delay_);
     ar(dma_active_);
+    ar(dma_latch_);
+    ar(dma_pending_page_);
+    ar(dma_start_delay_);
 }
 
 GB_INSTANTIATE_VISIT(Bus);

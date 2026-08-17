@@ -76,12 +76,36 @@ class Bus {
     void visit(Ar& ar);
 
   private:
+    // The DMG splits memory over two buses that can be driven independently.
+    // OAM DMA takes whichever one its source page sits on and leaves the other
+    // to the CPU, so which bus an address belongs to decides whether a CPU
+    // access during a transfer conflicts with it.
+    enum class BusKind : u8 { External, Video, Internal };
+
+    static constexpr BusKind bus_kind(u16 addr) {
+        if (addr < 0x8000) {
+            return BusKind::External;  // ROM
+        }
+        if (addr < 0xA000) {
+            return BusKind::Video;  // VRAM
+        }
+        if (addr < 0xFE00) {
+            return BusKind::External;  // cartridge RAM, WRAM, echo
+        }
+        return BusKind::Internal;  // OAM, I/O, HRAM, IE
+    }
+
     u8 bus_read(u16 addr) const;
     void bus_write(u16 addr, u8 value);
     u8 io_read(u16 addr) const;
     void io_write(u16 addr, u8 value);
     void start_oam_dma(u8 page);
     void step_oam_dma(u64 tcycles);
+
+    BusKind dma_bus() const;
+    u8 dma_source_read(u16 src) const;
+    u8 dma_cpu_read(u16 addr) const;
+    bool dma_blocks_write(u16 addr) const;
 
     Scheduler sched_;
     Timer timer_;
@@ -101,6 +125,14 @@ class Bus {
     u16 dma_index_ = 0;
     u16 dma_delay_ = 0;
     bool dma_active_ = false;
+    // What the transfer last put on the bus. A CPU access that lands on the
+    // busy bus reads this back instead of the byte it addressed.
+    u8 dma_latch_ = 0xFF;
+    // A write to FF46 does not take the bus straight away. Until the pending
+    // start expires the previous transfer, if any, keeps running and keeps
+    // owning the bus, which is what makes a restart observable.
+    u8 dma_pending_page_ = 0xFF;
+    u16 dma_start_delay_ = 0;
 };
 
 }  // namespace gb
