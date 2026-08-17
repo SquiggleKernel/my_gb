@@ -43,6 +43,7 @@ void Ppu::reset() {
     wx_ = 0;
     mode_ = PpuMode::OamScan;
     dot_ = 0;
+    mode3_dots_ = 172;
     window_line_ = 0;
     stat_line_ = false;
     frame_ready_ = false;
@@ -55,10 +56,9 @@ void Ppu::tick(u64 tcycles) {
     for (u64 i = 0; i < tcycles; ++i) {
         ++dot_;
         if (ly_ < kVBlankLine) {
-            // Mode 3 is stretched by the fine scroll; the fetcher discards
-            // SCX % 8 pixels before the first one reaches the screen.
-            const u16 draw_end = static_cast<u16>(kOamScanDots + 172 + (scx_ & 7));
+            const u16 draw_end = static_cast<u16>(kOamScanDots + mode3_dots_);
             if (dot_ == kOamScanDots) {
+                mode3_dots_ = mode3_dots();
                 set_mode(PpuMode::Drawing);
             } else if (dot_ == draw_end) {
                 render_scanline();
@@ -89,6 +89,39 @@ void Ppu::enter_line(u8 line) {
     } else {
         update_stat_line();
     }
+}
+
+// Mode 3 runs 172 dots when nothing gets in the fetcher's way. Three things do:
+// the fine scroll, which makes it discard SCX % 8 pixels before the first one
+// counts; reaching the window, which throws away the background fetch already
+// in progress; and each object on the line, which stalls it while the object is
+// fetched. Only the length changes here, not what gets drawn, since the
+// renderer paints the whole line in one go once mode 3 ends.
+//
+// The per-object cost is the floor of 6 dots. Hardware adds up to 5 more for
+// the first object landing in a given background tile, because the fetch it
+// interrupts has to restart; that part is left out, as none of the suites here
+// pin it down and guessing at it would be no better than leaving it off.
+u16 Ppu::mode3_dots() const {
+    int dots = 172 + (scx_ & 7);
+
+    const bool bg_enabled = (lcdc_ & 0x01) != 0;
+    if ((lcdc_ & 0x20) != 0 && bg_enabled && ly_ >= wy_ && wx_ <= 166) {
+        dots += 6;
+    }
+
+    if ((lcdc_ & 0x02) != 0) {
+        const int sprite_h = (lcdc_ & 0x04) != 0 ? 16 : 8;
+        int count = 0;
+        for (int i = 0; i < 40 && count < kMaxSpritesPerLine; ++i) {
+            const int sy = static_cast<int>(oam_[static_cast<std::size_t>(i) * 4]) - 16;
+            if (ly_ >= sy && ly_ < sy + sprite_h) {
+                ++count;
+            }
+        }
+        dots += 6 * count;
+    }
+    return static_cast<u16>(dots);
 }
 
 void Ppu::set_mode(PpuMode m) {
@@ -467,6 +500,7 @@ void Ppu::visit(Ar& ar) {
     ar(mode);
     mode_ = static_cast<PpuMode>(mode);
     ar(dot_);
+    ar(mode3_dots_);
     ar(window_line_);
     ar(stat_line_);
     ar(frame_ready_);

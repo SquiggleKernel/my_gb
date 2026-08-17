@@ -70,6 +70,9 @@ class Ppu {
     void update_stat_line();
     void enter_line(u8 line);
     void render_scanline();
+    // How long mode 3 runs on the current line. Fixed at the point drawing
+    // starts, because everything it depends on is latched by then.
+    u16 mode3_dots() const;
 
     Bus* bus_ = nullptr;
 
@@ -91,6 +94,7 @@ class Ppu {
 
     PpuMode mode_ = PpuMode::OamScan;
     u16 dot_ = 0;
+    u16 mode3_dots_ = 172;
     u8 window_line_ = 0;
     bool stat_line_ = false;
     bool frame_ready_ = false;
